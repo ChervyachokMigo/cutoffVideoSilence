@@ -1,5 +1,5 @@
 {
-  "name": "cutoffVideoSilece",
+  "name": "cutoffVideoSilence",
   "version": "1.0.0",
   "description": "Cut off all silences of video",
   "main": "index.js",

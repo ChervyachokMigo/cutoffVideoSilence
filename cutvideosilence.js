@@ -43,8 +43,9 @@ module.exports = {
 
 async function getKeyframes(inputFile){
     var keyframes = [];
-    
-    return new Promise((resolve, reject)=> {
+    var durationVideoSec = await getDuration(inputFile);   
+
+    var firstkeyframe = await new Promise((resolve, reject)=> {
         extractKeyframes(inputFile)
         .then(extractionProcess => {
 
@@ -55,23 +56,33 @@ async function getKeyframes(inputFile){
 
             // Event fired when a keyframe is extracted
             extractionProcess.on('keyframe', function(data){
-                keyframes.push(Object.values(data)[0]);
+                //keyframes.push(Object.values(data)[0]);
+                resolve(Object.values(data)[0]);
             });
 
             // Event fired when all keyframes have been extracted from the video
             extractionProcess.on('finish', function(data){
                 console.log(`[${getTime()}] finish counting keyframes. Total keyframes: ${data.totalFrames}`);
-                resolve(keyframes);
-                return
+                //resolve(keyframes);
             });
 
         })
         .catch(err => {
             console.log('[${getTime()}] Error extracting keyframes:', err);
             reject(err);
-            return
         });
     });
+
+    firstkeyframe = firstkeyframe % 2;
+
+    for (var i = firstkeyframe; i < durationVideoSec; i = i + 2){
+        keyframes.push(i)
+    }
+
+    console.log(`[${getTime()}] finish counting keyframes. Total keyframes: ${keyframes.length}`);
+
+    return keyframes;
+
 }
 
 async function getAndSaveLouderPoints(inputFile, cutfile_mp3){
@@ -334,7 +345,7 @@ function formatAddZero(t, symbols = 1){
 
 async function getDuration(source){
     return await getVideoDurationInSeconds(source).then((duration) => {
-        console.log(`[${getTime()}] ${source} duration: `,duration,`secs`);
+        //console.log(`[${getTime()}] ${source} duration: `,duration,`secs`);
         return duration;
     });
 }
