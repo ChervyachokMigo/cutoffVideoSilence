@@ -293,7 +293,9 @@ async function joinvideo(inputFile, params){
         `-acodec copy`, 
         `"${outputFile}"`
     ];
-    return await exec_cmd(`ffmpeg.exe`, ffmpeg_args);
+    var ffmpeg_exec_join = await exec_cmd(`ffmpeg.exe`, ffmpeg_args);
+    await deletefile(concatfilename);
+    return ffmpeg_exec_join;
 }
 
 async function concat_nearpoints(inoutpoints){

@@ -1,4 +1,4 @@
-const {cutvideosilence, cutVideoByDuration}  = require('./cutvideosilence');
+const { cutvideosilence, cutVideoByDuration }  = require('./cutvideosilence');
 
 const params = {
     silenceVolumeThreadhold: 0.2,
