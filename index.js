@@ -11,8 +11,8 @@ silenceReleaseSec: 1.5,
 silenceDelaySec: 1.5,
 keyframeGlitchOffset: 1.5*/
 
-const folderPath = `F:\\Downloads`;
 //const folderPath = `F:\\!FileArchive\\talalauploads`;
+const folderPath = `F:\\Downloads`;
 
 const fileName = `Первая кровь! _ Worms W.M.D. _ CS -GO-S4hWtAZo7PM.mp4`;
 

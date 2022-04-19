@@ -44,9 +44,11 @@ function getTime(){
 }
 
 async function deletefile (file){
-    rm( file, ()=> 
-        console.log(`[${getTime()}] delete ${file}`)
-    );
+    try{
+        rm( file, ()=> 
+            console.log(`[${getTime()}] delete ${file}`)
+        );
+    } catch (e) { }
 }
 
 module.exports = {

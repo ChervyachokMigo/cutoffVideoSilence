@@ -13,13 +13,13 @@ const {getTime, formatAddZero, deletefile, exec_cmd} = require(`./tools`)
 module.exports = {
     cutvideosilence: async function (folderPath, filePath, params){ 
         if (typeof params.silenceVolumeThreadhold === 'undefined' || 
-        typeof params.silenceReleaseSec === 'undefined' || 
-        typeof params.silenceDelaySec === 'undefined' ||
-        typeof params.keyframeGlitchOffset === 'undefined') {
+            typeof params.silenceReleaseSec === 'undefined' || 
+            typeof params.silenceDelaySec === 'undefined' ||
+            typeof params.keyframeGlitchOffset === 'undefined' )
+        {
             console.log (`parameters not setuped.`)
             return false
         }
-        
 
         var inputFile = `${folderPath}\\${filePath}`;  
         var cutfile_mp3 = await splitToMp3(inputFile);
@@ -97,16 +97,14 @@ async function getKeyframes(inputFile){
 }
 
 async function getAndSaveLouderPoints(inputFile, cutfile_mp3, params){
-    const audioFreq = await getAudioFreq(inputFile);
-    //console.log(`Частота дискретизации`, audioFreq);
-    /*const audioBitrate = await getAudioBitrate(inputFile);
-    console.log(audioBitrate);*/
+    const audioFreq = await getAudioParameter(inputFile, `freq`);
+
     var dirname = path.dirname(inputFile);
     var basefilename = path.basename(inputFile,path.extname(inputFile));
 
     var concatfilename = `${dirname}\\${basefilename}_concat.txt`;
 
-    try{  fs.rmSync(concatfilename);  } catch(e){};
+    await deletefile(concatfilename);
 
     var durationVideoSec = await getDuration(inputFile);   
 
@@ -260,7 +258,16 @@ async function splitToMp3(input){
         let startpoint = (countfile-1)*config.mp3onePartDurationSec;
         if (!isExists(splitedFilename)) {
             console.log(`[${getTime()}] - start spliting ${countfile}/${countfiles} file to ${splitedFilename}`);
-            await exec_cmd(`ffmpeg.exe`, [`-loglevel quiet`, `-y`, `-i "${input}"`, `-ss ${startpoint}`, `-t ${config.mp3onePartDurationSec}`, `-vn`, `"${splitedFilename}"`]);
+            var ffmpeg_args = [
+                `-loglevel quiet`, 
+                `-y`, 
+                `-i "${input}"`, 
+                `-ss ${startpoint}`, 
+                `-t ${config.mp3onePartDurationSec}`, 
+                `-vn`, 
+                `"${splitedFilename}"`
+            ];
+            await exec_cmd(`ffmpeg.exe`, ffmpeg_args);
         } else {
             console.log(`[${getTime()}] - skipping existing ${splitedFilename} ${countfile}/${countfiles} file`);
         }
@@ -276,7 +283,17 @@ async function joinvideo(inputFile, params){
     var outputFile = `${dirname}\\${basefilename}_unsilenced_${paramsText}.mp4`;
     var concatfilename = `${dirname}\\${basefilename}_concat.txt`;
     console.log(`[${getTime()}] concat all parts to ${outputFile}`);
-    return await exec_cmd(`ffmpeg.exe`, [`-loglevel quiet`, `-y`,`-f concat`, `-safe 0`, `-i "${concatfilename}"`, `-vcodec copy`, `-acodec copy`, `"${outputFile}"`]);
+    var ffmpeg_args = [
+        `-loglevel quiet`, 
+        `-y`,
+        `-f concat`, 
+        `-safe 0`, 
+        `-i "${concatfilename}"`, 
+        `-vcodec copy`, 
+        `-acodec copy`, 
+        `"${outputFile}"`
+    ];
+    return await exec_cmd(`ffmpeg.exe`, ffmpeg_args);
 }
 
 async function concat_nearpoints(inoutpoints){
@@ -295,7 +312,7 @@ async function concat_nearpoints(inoutpoints){
     return inoutpoints_filtred;
 }
 
-async function getAudioFreq(input){
+async function getAudioParameter(input, parameterName){
     return await new Promise((resolve, reject)=> {
         ffmpeg.ffprobe(input, function(err, metadata) {
             if (err) {
@@ -304,23 +321,12 @@ async function getAudioFreq(input){
             }
             metadata.streams.forEach(function(stream){
                 if (stream.codec_type === `audio`){
-                    resolve(stream.sample_rate)
-                }
-            });
-        });
-    });
-}
-
-async function getAudioBitrate(input){
-    return await new Promise((resolve, reject)=> {
-        ffmpeg.ffprobe(input, function(err, metadata) {
-            if (err) {
-                reject(err);
-                return;
-            }
-            metadata.streams.forEach(function(stream){
-                if (stream.codec_type === `audio`){
-                    resolve(stream.bit_rate)
+                    if (parameterName === `freq`){
+                        resolve(stream.sample_rate)
+                    }
+                    if (parameterName === `bitrate`){
+                        resolve(stream.bit_rate)
+                    }
                 }
             });
         });
