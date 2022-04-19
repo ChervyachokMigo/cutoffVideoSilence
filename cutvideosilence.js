@@ -4,27 +4,33 @@ const decode = require('audio-decode');
 var ffmpeg = require('fluent-ffmpeg');
 const { getVideoDurationInSeconds } = require('get-video-duration');
 const Lame = require("node-lame").Lame;
-
-const config = require(`./config`);
-const exec_cmd = require(`./exec_cmd`);
-const { deletefile } = require(`./convertToMp3`);
-
-const partDurationSec = 480;
-
 const extractKeyframes = require('extract-keyframes');
 
+const config = require(`./config`);
+
+const {getTime, formatAddZero, deletefile, exec_cmd} = require(`./tools`)
+
 module.exports = {
-    cutvideosilence: async function (inputFile){   
-    var cutfile_mp3 = await splitToMp3(inputFile);
+    cutvideosilence: async function (folderPath, filePath, params){ 
+        if (typeof params.silenceVolumeThreadhold === 'undefined' || 
+        typeof params.silenceReleaseSec === 'undefined' || 
+        typeof params.silenceDelaySec === 'undefined' ||
+        typeof params.keyframeGlitchOffset === 'undefined') {
+            console.log (`parameters not setuped.`)
+            return false
+        }
+        
 
-    if (config.ForceSaveLouderPoints){
-        await getAndSaveLouderPoints(inputFile, cutfile_mp3);
-    }
+        var inputFile = `${folderPath}\\${filePath}`;  
+        var cutfile_mp3 = await splitToMp3(inputFile);
 
-    //concat all files
-    await joinvideo(inputFile);
-    
-    console.log(`[${getTime()}] task complete`);
+        if (config.SaveLouderPoints){
+            await getAndSaveLouderPoints(inputFile, cutfile_mp3, params);
+        }
+
+        await joinvideo(inputFile, params);
+        
+        console.log(`[${getTime()}] task complete`);
     },
 
     cutVideoByDuration: async function(inputFile, startTime, durationTime){
@@ -33,7 +39,17 @@ module.exports = {
         var outputFile = `${dirname}\\${basefilename}_cutted.mp4`;
         if (!isExists(outputFile)) {
             console.log(`[${getTime()}] - start cuting ${inputFile} to ${outputFile}`);
-            await exec_cmd(`ffmpeg.exe`, [`-loglevel quiet`, `-y`, `-i "${inputFile}"`, `-ss ${startTime}`, `-t ${durationTime}`, `-vcodec copy`, `-acodec copy`, `"${outputFile}"`]);
+            var ffmpeg_args = [
+                `-loglevel quiet`, 
+                `-y`, 
+                `-i "${inputFile}"`, 
+                `-ss ${startTime}`, 
+                `-t ${durationTime}`, 
+                `-vcodec copy`, 
+                `-acodec copy`, 
+                `"${outputFile}"`
+            ];
+            await exec_cmd(`ffmpeg.exe`, ffmpeg_args);
         } else {
             console.log(`[${getTime()}] skipping existing ${outputFile} file`);
         }
@@ -58,12 +74,7 @@ async function getKeyframes(inputFile){
             extractionProcess.on('keyframe', function(data){
                 //keyframes.push(Object.values(data)[0]);
                 resolve(Object.values(data)[0]);
-            });
-
-            // Event fired when all keyframes have been extracted from the video
-            extractionProcess.on('finish', function(data){
-                console.log(`[${getTime()}] finish counting keyframes. Total keyframes: ${data.totalFrames}`);
-                //resolve(keyframes);
+                extractionProcess.emit('close');
             });
 
         })
@@ -85,7 +96,7 @@ async function getKeyframes(inputFile){
 
 }
 
-async function getAndSaveLouderPoints(inputFile, cutfile_mp3){
+async function getAndSaveLouderPoints(inputFile, cutfile_mp3, params){
     const audioFreq = await getAudioFreq(inputFile);
     //console.log(`Частота дискретизации`, audioFreq);
     /*const audioBitrate = await getAudioBitrate(inputFile);
@@ -100,11 +111,11 @@ async function getAndSaveLouderPoints(inputFile, cutfile_mp3){
     var durationVideoSec = await getDuration(inputFile);   
 
     var keyframes = await getKeyframes(inputFile);
-
+    console.log(keyframes);
     console.log(`[${getTime()}] start finding louder points and save of ${cutfile_mp3.length} files:`);
     var inoutpoints = [];
     for(var idx in cutfile_mp3){
-        let timeOffset = Number(idx) * partDurationSec;
+        let timeOffset = Number(idx) * config.mp3onePartDurationSec;
 
         console.log(`[${getTime()}] start processing ${Number(idx) + 1} of ${cutfile_mp3.length} part`);
 
@@ -127,14 +138,14 @@ async function getAndSaveLouderPoints(inputFile, cutfile_mp3){
         let timeList = [];
         let alldata = [];
 
-        console.log(`[${getTime()}] get volume louder points >${config.silenceVolumeThreadhold} from buffer`);
+        console.log(`[${getTime()}] get volume louder points >${params.silenceVolumeThreadhold} from buffer`);
         await decode(gettedbuffer, (err, audioBuffer) => {
             alldata = audioBuffer._channelData[0];
             console.log(`[${getTime()}] checking ${alldata.length} frames`);
             for (var buffval in audioBuffer._channelData[0]){
                 let val = audioBuffer._channelData[0][buffval];
                 
-                if(val>=config.silenceVolumeThreadhold){
+                if(val>=params.silenceVolumeThreadhold){
                     timeList.push({bufferoffset: buffval, time:buffval/audioFreq + timeOffset});
                 }
             }
@@ -143,7 +154,7 @@ async function getAndSaveLouderPoints(inputFile, cutfile_mp3){
         console.log(`[${getTime()}] filtering volume louder points ${timeList.length} points`);
         timeList = timeList.filter((val,idx,arr)=>{
             if (idx>0){
-                if (arr[idx-1].time + config.silenceReleaseSec <= val.time){
+                if (arr[idx-1].time + params.silenceReleaseSec <= val.time){
                     return val
                 }
             } else {
@@ -160,7 +171,7 @@ async function getAndSaveLouderPoints(inputFile, cutfile_mp3){
                 keyframes.find((kfval, kfidx, kfarr)=>{
                     new Promise(()=> {
                         if(val.time >= kfval && (typeof kfarr[kfidx+1] === 'undefined' || val.time < kfarr[kfidx+1])){
-                            val.time = kfval-config.keyframeGlitchOffset;
+                            val.time = kfval-params.keyframeGlitchOffset;
                         }
                     });
                 });
@@ -175,7 +186,7 @@ async function getAndSaveLouderPoints(inputFile, cutfile_mp3){
         
 
     
-        const stopTimeLong = config.silenceReleaseSec * audioFreq;
+        const stopTimeLong = params.silenceReleaseSec * audioFreq;
         
         console.log(`[${getTime()}] getting longs of ${timeList.length} points`);
         let inoutpoints_current = [];
@@ -185,7 +196,7 @@ async function getAndSaveLouderPoints(inputFile, cutfile_mp3){
                 
                 if (stopTime>alldata.length) break
             
-                if (alldata[stopTime] <= config.silenceVolumeThreadhold) {
+                if (alldata[stopTime] <= params.silenceVolumeThreadhold) {
                     stopInc--;
                 } else {
                     stopInc = stopTimeLong;
@@ -193,7 +204,7 @@ async function getAndSaveLouderPoints(inputFile, cutfile_mp3){
                 
             }
             timeList[list_idx].longTime = stopTime/audioFreq + timeOffset;
-            timeList[list_idx].longTime -= (config.silenceReleaseSec-config.silenceDelaySec);
+            timeList[list_idx].longTime -= (params.silenceReleaseSec-params.silenceDelaySec);
             if (timeList[list_idx].longTime > durationVideoSec){
                 timeList[list_idx].longTime = durationVideoSec;
             }
@@ -240,16 +251,16 @@ async function splitToMp3(input){
 
     var durationVideoSec = await getDuration(input);   
 
-    var countfiles = Math.ceil(durationVideoSec/partDurationSec);
+    var countfiles = Math.ceil(durationVideoSec/config.mp3onePartDurationSec);
     
     var inputfiles = [];
     console.log(`[${getTime()}] split file ${input} to ${countfiles} files:`);
     for (var countfile = 1; countfile <= countfiles; countfile++){
         let splitedFilename = `${dirname}\\${basefilename}_${formatAddZero(countfile,3)}.mp3`;
-        let startpoint = (countfile-1)*partDurationSec;
+        let startpoint = (countfile-1)*config.mp3onePartDurationSec;
         if (!isExists(splitedFilename)) {
             console.log(`[${getTime()}] - start spliting ${countfile}/${countfiles} file to ${splitedFilename}`);
-            await exec_cmd(`ffmpeg.exe`, [`-loglevel quiet`, `-y`, `-i "${input}"`, `-ss ${startpoint}`, `-t ${partDurationSec}`, `-vn`, `"${splitedFilename}"`]);
+            await exec_cmd(`ffmpeg.exe`, [`-loglevel quiet`, `-y`, `-i "${input}"`, `-ss ${startpoint}`, `-t ${config.mp3onePartDurationSec}`, `-vn`, `"${splitedFilename}"`]);
         } else {
             console.log(`[${getTime()}] - skipping existing ${splitedFilename} ${countfile}/${countfiles} file`);
         }
@@ -258,10 +269,10 @@ async function splitToMp3(input){
     return inputfiles
 }
 
-async function joinvideo(inputFile){
+async function joinvideo(inputFile, params){
     var dirname = path.dirname(inputFile);
     var basefilename = path.basename(inputFile,path.extname(inputFile));
-    var paramsText = `${config.silenceVolumeThreadhold}-${config.silenceReleaseSec}-${config.silenceDelaySec}`;
+    var paramsText = `${params.silenceVolumeThreadhold}-${params.silenceReleaseSec}-${params.silenceDelaySec}-${params.keyframeGlitchOffset}`;
     var outputFile = `${dirname}\\${basefilename}_unsilenced_${paramsText}.mp4`;
     var concatfilename = `${dirname}\\${basefilename}_concat.txt`;
     console.log(`[${getTime()}] concat all parts to ${outputFile}`);
@@ -332,16 +343,6 @@ function onlyUnique(value, index, self) {
 	return self.indexOf(value) === index;
 }
 
-function formatAddZero(t, symbols = 1){
-    var numberZeroed = t.toString();
-    var numberLength = t.toString().length;
-    if ( numberZeroed.length < symbols){
-        for (var i = 0; i < symbols-numberLength; i++){
-            numberZeroed = `0${numberZeroed}`;
-        }
-    }
-    return numberZeroed;
-}
 
 async function getDuration(source){
     return await getVideoDurationInSeconds(source).then((duration) => {
@@ -350,10 +351,3 @@ async function getDuration(source){
     });
 }
 
-function getTime(){
-    let d = new Date(); 
-    let d_hour = formatAddZero( d.getHours(), 2 );
-    let d_min = formatAddZero( d.getMinutes(), 2 );
-    let d_sec = formatAddZero( d.getSeconds(), 2 );
-    return `${d_hour}:${d_min}:${d_sec}`;
-}
