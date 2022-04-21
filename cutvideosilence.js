@@ -11,7 +11,7 @@ const config = require(`./config`);
 const {getTime, formatAddZero, deletefile, exec_cmd} = require(`./tools`)
 
 module.exports = {
-    cutvideosilence: async function (folderPath, filePath, params){ 
+    cutvideosilence: async function (inputFile, params){ 
         if (typeof params.silenceVolumeThreadhold === 'undefined' || 
             typeof params.silenceReleaseSec === 'undefined' || 
             typeof params.silenceDelaySec === 'undefined' ||
@@ -20,8 +20,15 @@ module.exports = {
             console.log (`parameters not setuped.`)
             return false
         }
+        if (params.silenceReleaseSec<0.1){
+            console.log(`[${getTime()}] wrong parameter silenceReleaseSec`);
+            return false
+        }
+        if (path.extname(inputFile).toLowerCase() !== '.mp4'){
+            console.log(`wrong input file type: ${path.extname(inputFile)}. Expected mp4`)
+            return false
+        }
 
-        var inputFile = `${folderPath}\\${filePath}`;  
         var cutfile_mp3 = await splitToMp3(inputFile);
 
         if (config.SaveLouderPoints){
@@ -150,9 +157,10 @@ async function getAndSaveLouderPoints(inputFile, cutfile_mp3, params){
         });
 
         console.log(`[${getTime()}] filtering volume louder points ${timeList.length} points`);
+        
         timeList = timeList.filter((val,idx,arr)=>{
             if (idx>0){
-                if (arr[idx-1].time + params.silenceReleaseSec <= val.time){
+                if (arr[idx-1].time + params.silenceAtackSec <= val.time){
                     return val
                 }
             } else {
@@ -202,7 +210,8 @@ async function getAndSaveLouderPoints(inputFile, cutfile_mp3, params){
                 
             }
             timeList[list_idx].longTime = stopTime/audioFreq + timeOffset;
-            timeList[list_idx].longTime -= (params.silenceReleaseSec-params.silenceDelaySec);
+            timeList[list_idx].longTime -= params.silenceReleaseSec;
+            timeList[list_idx].longTime += params.silenceDelaySec;
             if (timeList[list_idx].longTime > durationVideoSec){
                 timeList[list_idx].longTime = durationVideoSec;
             }
